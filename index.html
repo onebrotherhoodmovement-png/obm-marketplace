@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OBM Marketplace</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f3ec;--card:#fff;--ink:#17140f;--mute:#6b645a;--gold:#c8962a;--line:#e4ded2;--hd:#17140f;--hdt:#f6f3ec;--warn:#fff3d6;
+color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14120e;--card:#1f1c16;--ink:#f3efe6;--mute:#a39b8c;--line:#363126;--hd:#0c0b08;--warn:#3a2f12;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14120e;--card:#1f1c16;--ink:#f3efe6;--mute:#a39b8c;--line:#363126;--hd:#0c0b08;--warn:#3a2f12;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.45 Inter,system-ui,sans-serif;padding-bottom:76px}
+h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin:0}
+header{background:var(--hd);color:var(--hdt);padding:16px 16px 14px}
+header h1{font-size:22px;letter-spacing:.2px}
+header h1 span{color:var(--gold)}
+header p{margin:2px 0 0;font-size:13px;opacity:.75}
+main{max-width:720px;margin:0 auto;padding:14px 16px}
+.tab{display:none}.tab.on{display:block}
+input,select,textarea,button{font:inherit;color:inherit}
+input,select,textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);margin-bottom:10px}
+button{cursor:pointer}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px}
+.chip{flex:none;border:1px solid var(--line);background:var(--card);padding:7px 13px;border-radius:20px}
+.chip.on{background:var(--gold);border-color:var(--gold);color:#17140f;font-weight:500}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(min-width:560px){.grid{grid-template-columns:repeat(3,1fr)}}
+.item{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;text-align:left;padding:0}
+.ph{height:96px;display:flex;align-items:center;justify-content:center;font-size:38px;background:var(--line)}
+.item div.b{padding:9px 11px 11px}
+.item b{display:block;font-family:"Bricolage Grotesque",sans-serif;font-size:18px}
+.item small{color:var(--mute)}
+.btn{background:var(--gold);color:#17140f;border:0;border-radius:8px;padding:12px 16px;font-weight:500;width:100%}
+.btn.alt{background:transparent;border:1px solid var(--line);color:var(--ink)}
+.note{background:var(--warn);border-left:4px solid var(--gold);padding:10px 12px;border-radius:6px;font-size:14px;margin:0 0 12px}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--hd);display:flex;padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{flex:1;background:none;border:0;color:var(--hdt);opacity:.6;padding:11px 0 9px;font-size:12px}
+nav button.on{opacity:1;color:var(--gold)}
+nav button i{display:block;font-style:normal;font-size:20px}
+.sheet{position:fixed;inset:0;background:var(--bg);z-index:5;overflow:auto;display:none;padding:env(safe-area-inset-top,0px) 16px 24px}
+.sheet.on{display:block}
+.sheet .ph{height:180px;font-size:72px;border-radius:10px;margin:12px 0}
+.msgs{display:flex;flex-direction:column;gap:8px;margin:12px 0;min-height:140px}
+.m{max-width:80%;padding:9px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
+.m.me{align-self:flex-end;background:var(--gold);color:#17140f;border-color:var(--gold)}
+.row{display:flex;gap:8px}.row input{margin:0}.row .btn{width:auto}
+.tips li{margin-bottom:8px}
+</style>
+</head>
+<body>
+<header><h1>OBM <span>Marketplace</span></h1><p>Buy, sell, and meet up locally. Built by One Brotherhood Movement.</p></header>
+<main>
+<section class="tab on" id="browse">
+<input id="q" type="search" placeholder="Search items near you">
+<div class="chips" id="chips"></div>
+<div class="grid" id="grid"></div>
+</section>
+
+<section class="tab" id="post">
+<h2>Post an item</h2>
+<p class="note">No payments in the app. You and the buyer agree on a price and meet in person.</p>
+<input id="pt" placeholder="What are you selling?">
+<input id="pp" type="number" inputmode="numeric" placeholder="Price in dollars">
+<select id="pc"></select>
+<input id="pl" placeholder="Your area (for example, Raleigh)">
+<textarea id="pd" rows="3" placeholder="Describe the item and its condition"></textarea>
+<button class="btn" id="pb">Post listing</button>
+</section>
+
+<section class="tab" id="safety">
+<h2>Meet up safely</h2>
+<ul class="tips">
+<li>Meet in a busy public place. Many police stations have a marked meetup spot.</li>
+<li>Bring a friend, or tell someone where you are going.</li>
+<li>Meet in daylight when you can.</li>
+<li>Check the item before you hand over any money.</li>
+<li>Never send a deposit or gift card before you meet. Real sellers don’t ask for one.</li>
+<li>Report any listing or person that feels wrong.</li>
+</ul>
+<button class="btn alt" onclick="alert('Thanks. In the full app, this sends a report to the OBM team.')">Report a problem</button>
+</section>
+</main>
+
+<div class="sheet" id="sheet">
+<button class="btn alt" style="width:auto;margin-top:12px" id="back">Back</button>
+<div class="ph" id="sp"></div>
+<h2 id="st"></h2>
+<p><b id="sprice"></b> <small id="sl"></small></p>
+<p id="sd"></p>
+<div class="note">Pay in person only. If someone asks for a deposit, Zelle, Cash App, or gift cards first, it may be a scam.</div>
+<div class="msgs" id="msgs"></div>
+<div class="row"><input id="mi" placeholder="Message the seller"><button class="btn" id="ms">Send</button></div>
+</div>
+
+<nav>
+<button class="on" data-t="browse"><i>🛍</i>Browse</button>
+<button data-t="post"><i>＋</i>Sell</button>
+<button data-t="safety"><i>🛡</i>Safety</button>
+</nav>
+
+<script>
+var cats=["All","Electronics","Furniture","Clothing","Tools","Vehicles","Home","Other"];
+var icons={Electronics:"📱",Furn
