@@ -44,10 +44,11 @@ $("grid").onclick=function(e){var b=e.target.closest(".item");if(!b)return;cur=i
 $("back").onclick=function(){$("sheet").classList.remove("on")};
 $("ms").onclick=function(){var v=$("mi").value.trim();if(!v)return;$("mi").value="";
  var d=document.createElement("div");d.className="m";d.textContent="Messaging is coming soon, so this message was not sent.";$("msgs").appendChild(d)};
-$("pc").innerHTML=cats.slice(1).map(function(c){return "<option>"+c+"</option>"}).join("");
+$("pc").innerHTML='<option value="">Choose a category</option>'+cats.slice(1).map(function(c){return "<option>"+c+"</option>"}).join("");
 $("pb").onclick=async function(){var t=$("pt").value.trim(),p=$("pp").value;
  if(!user){alert("Sign in first.");return}
  if(!t||!p){alert("Add an item name and a price.");return}
+                                 if(!$("pc").value){alert("Choose a category.");return}
  var r=await db.from("listings").insert({title:t,price:Number(p),category:$("pc").value,area:$("pl").value.trim()||null,description:$("pd").value.trim()||null});
  if(r.error){alert("Could not post: "+r.error.message);return}
  ["pt","pp","pl","pd"].forEach(function(i){$(i).value=""});cat="All";chips();await load();show("browse")};
