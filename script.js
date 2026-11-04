@@ -58,16 +58,58 @@ async function loadMsgs(){
  if(!rows.length)note("No messages yet. Say hello and ask where to meet.");
  rows.forEach(function(m){var d=document.createElement("div");d.className="m"+(m.sender_id===user.id?" me":"");d.textContent=m.body;$("msgs").appendChild(d)});
 }
+function fillSheet(){
+ $("sp").innerHTML=thumb(cur);$("st").textContent=cur.t;$("sprice").textContent=money(cur.p);$("sl").textContent=cur.l;$("sd").textContent=cur.d;
+ ["edt","del","rep","editbox"].forEach(function(id){var o=$(id);if(o)o.remove()});
+ if(user&&cur.u===user.id){
+  var be=document.createElement("button");be.id="edt";be.className="btn alt";be.style.marginBottom="8px";be.textContent="Edit my listing";be.onclick=openEdit;
+  var bd=document.createElement("button");bd.id="del";bd.className="btn alt";bd.style.marginBottom="8px";bd.textContent="Delete my listing";bd.onclick=delListing;
+  $("sd").after(be);be.after(bd);
+ }else if(user){
+  var br=document.createElement("button");br.id="rep";br.className="btn alt";br.style.marginBottom="8px";br.textContent="Report listing";br.onclick=reportListing;
+  $("sd").after(br);
+ }
+}
+async function delListing(){
+ if(!confirm("Delete this listing?"))return;
+ var r=await db.from("listings").delete().eq("id",cur.id);
+ if(r.error){alert(r.error.message);return}
+ if(cur.img&&cur.img.indexOf("/listing-photos/")>-1){await db.storage.from("listing-photos").remove([cur.img.split("/listing-photos/")[1]])}
+ $("sheet").classList.remove("on");load();
+}
+function openEdit(){
+ if($("editbox")){$("editbox").remove();return}
+ var box=document.createElement("div");box.id="editbox";box.style.margin="0 0 12px";
+ box.innerHTML='<input id="et" placeholder="Item name"><input id="ep" type="number" inputmode="numeric" placeholder="Price in dollars"><select id="ec"></select><input id="el" placeholder="Your area"><textarea id="ed" rows="3" placeholder="Description"></textarea><div class="row"><button class="btn" id="es">Save changes</button><button class="btn alt" id="ex">Cancel</button></div>';
+ $("del").after(box);
+ $("ec").innerHTML=cats.slice(1).map(function(c){return "<option>"+c+"</option>"}).join("");
+ $("et").value=cur.t;$("ep").value=cur.p;$("ec").value=cur.c;$("el").value=cur.l==="Nearby"?"":cur.l;$("ed").value=cur.d==="No description."?"":cur.d;
+ $("ex").onclick=function(){box.remove()};
+ $("es").onclick=async function(){
+  var t=$("et").value.trim(),p=$("ep").value;
+  if(!t||!p){alert("Add an item name and a price.");return}
+  var r=await db.from("listings").update({title:t,price:Number(p),category:$("ec").value,area:$("el").value.trim()||null,description:$("ed").value.trim()||null}).eq("id",cur.id);
+  if(r.error){alert("Could not save: "+r.error.message);return}
+  var id=cur.id;await load();
+  cur=items.filter(function(x){return x.id===id})[0]||cur;
+  fillSheet();
+ };
+}
+async function reportListing(){
+ var why=prompt("What is wrong with this listing? (for example scam, banned item, or fake)");
+ if(why===null)return;
+ why=why.trim();
+ if(!why){alert("Please add a short reason.");return}
+ var r=await db.from("reports").insert({listing_id:cur.id,reason:why.slice(0,500)});
+ if(r.error){alert(r.error.code==="23505"?"You already reported this listing. Thank you.":"Could not send report: "+r.error.message);return}
+ alert("Thank you. Your report was sent to the OBM team.");
+}
+var rb=document.querySelector("#safety .btn.alt");
+if(rb)rb.onclick=function(){alert("To report a listing, open it and tap Report listing.")};
 $("chips").onclick=function(e){if(e.target.dataset.c){cat=e.target.dataset.c;chips();grid()}};
 $("q").oninput=grid;
 $("grid").onclick=function(e){var b=e.target.closest(".item");if(!b)return;cur=items[b.dataset.k];thread=null;
- $("sp").innerHTML=thumb(cur);$("st").textContent=cur.t;$("sprice").textContent=money(cur.p);$("sl").textContent=cur.l;$("sd").textContent=cur.d;
- var old=$("del");if(old)old.remove();
- if(user&&cur.u===user.id){var b2=document.createElement("button");b2.id="del";b2.className="btn alt";b2.textContent="Delete my listing";
-  b2.onclick=async function(){if(!confirm("Delete this listing?"))return;var r=await db.from("listings").delete().eq("id",cur.id);if(r.error){alert(r.error.message);return}
-   if(cur.img&&cur.img.indexOf("/listing-photos/")>-1){await db.storage.from("listing-photos").remove([cur.img.split("/listing-photos/")[1]])}
-   $("sheet").classList.remove("on");load()};
-  $("sd").after(b2)}
+ fillSheet();
  $("sheet").classList.add("on");window.scrollTo(0,0);loadMsgs()};
 $("back").onclick=function(){$("sheet").classList.remove("on");cur=null;thread=null};
 $("ms").onclick=async function(){var v=$("mi").value.trim();
