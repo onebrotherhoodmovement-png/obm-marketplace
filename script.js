@@ -8,89 +8,6 @@ function $(i){return document.getElementById(i)}
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function money(n){return "$"+Number(n).toLocaleString("en-US")}
 function thumb(i){return i.img?'<img src="'+esc(i.img)+'" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">':(icons[i.c]||icons.Other)}
-var MAXP=6;
-function shrink(f){
- return new Promise(function(res){
-  var u=URL.createObjectURL(f),im=new Image();
-  im.onload=function(){
-   var w=im.naturalWidth,h=im.naturalHeight,k=Math.min(1,1600/Math.max(w,h));
-   var c=document.createElement("canvas");c.width=Math.round(w*k);c.height=Math.round(h*k);
-   var x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
-   URL.revokeObjectURL(u);
-   c.toBlob(function(b){res(b&&b.size<f.size?b:(f.size<=5242880?f:null))},"image/jpeg",0.82);
-  };
-  im.onerror=function(){URL.revokeObjectURL(u);res(f.size<=5242880?f:null)};
-  im.src=u;
- });
-}
-function photoMgr(box,urls){
- var m={items:urls.map(function(u){return{url:u}}),gone:[]};
- var inp=document.createElement("input");inp.type="file";inp.accept="image/jpeg,image/png,image/webp";inp.multiple=true;inp.style.display="none";
- var strip=document.createElement("div");strip.style.cssText="display:flex;flex-wrap:wrap;gap:12px;margin:0 0 12px";
- var add=document.createElement("button");add.type="button";add.className="btn alt";add.style.marginBottom="8px";
- var msg=document.createElement("small");msg.style.cssText="display:block;margin:0 0 10px";msg.setAttribute("role","status");
- box.appendChild(strip);box.appendChild(add);box.appendChild(msg);box.appendChild(inp);
- function draw(){
-  strip.innerHTML="";
-  m.items.forEach(function(it,i){
-   var w=document.createElement("div");w.style.cssText="position:relative;width:88px;height:88px";
-   var im=document.createElement("img");im.src=it.url||it.preview;im.alt="Photo "+(i+1);im.style.cssText="width:100%;height:100%;object-fit:cover;border-radius:10px";
-   var x=document.createElement("button");x.type="button";x.textContent="\u00D7";x.setAttribute("aria-label","Remove photo "+(i+1));
-   x.style.cssText="position:absolute;top:-10px;right:-10px;width:36px;height:36px;border-radius:50%;border:2px solid #fff;background:#000;color:#fff;font-size:22px;line-height:1;cursor:pointer;padding:0";
-   x.onclick=function(){var r=m.items.splice(i,1)[0];if(r.url)m.gone.push(r.url);if(r.preview)URL.revokeObjectURL(r.preview);msg.textContent="";draw()};
-   w.appendChild(im);w.appendChild(x);
-   if(i===0){var cv=document.createElement("span");cv.textContent="Cover";cv.style.cssText="position:absolute;left:4px;bottom:4px;background:rgba(0,0,0,.75);color:#fff;font-size:11px;padding:2px 7px;border-radius:6px";w.appendChild(cv)}
-   strip.appendChild(w);
-  });
-  add.textContent=m.items.length?"Add more photos ("+m.items.length+" of "+MAXP+")":"Add photos (up to "+MAXP+")";
-  add.style.display=m.items.length>=MAXP?"none":"";
- }
- add.onclick=function(){inp.click()};
- inp.onchange=async function(){
-  var files=[].slice.call(inp.files);inp.value="";
-  if(!files.length)return;
-  msg.textContent="Preparing photos...";
-  var skipped=0,bad="";
-  for(var k=0;k<files.length;k++){
-   if(m.items.length>=MAXP){skipped++;continue}
-   var b=await shrink(files[k]);
-   if(!b){bad=files[k].name;continue}
-   m.items.push({blob:b,preview:URL.createObjectURL(b)});
-  }
-  msg.textContent=skipped?"Only "+MAXP+" photos per listing.":(bad?"Could not use "+bad+". Try a different photo.":"");
-  draw();
- };
- m.reset=function(){m.items.forEach(function(it){if(it.preview)URL.revokeObjectURL(it.preview)});m.items=[];m.gone=[];msg.textContent="";draw()};
- draw();
- return m;
-}
-async function uploadAll(m){
- var out=[],made=[];
- for(var k=0;k<m.items.length;k++){
-  var it=m.items[k];
-  if(it.url){out.push(it.url);continue}
-  var t=it.blob.type,ext=t==="image/png"?"png":t==="image/webp"?"webp":"jpg";
-  var path=user.id+"/"+Date.now()+"-"+k+"-"+Math.random().toString(36).slice(2,7)+"."+ext;
-  var up=await db.storage.from("listing-photos").upload(path,it.blob,{contentType:t});
-  if(up.error){if(made.length){try{await db.storage.from("listing-photos").remove(made)}catch(e){}}throw up.error}
-  made.push(path);out.push(db.storage.from("listing-photos").getPublicUrl(path).data.publicUrl);
- }
- return out;
-}
-async function rmPhotos(u){
- var p=(u||[]).filter(function(x){return x&&x.indexOf("/listing-photos/")>-1}).map(function(x){return x.split("/listing-photos/")[1]});
- if(p.length){try{await db.storage.from("listing-photos").remove(p)}catch(e){}}
-}
-async function saveRow(fn,row){
- var r=await fn(row);
- if(r.error&&/image_urls/.test(r.error.message||"")){var o=Object.assign({},row);delete o.image_urls;r=await fn(o)}
- return r;
-}
-function gal(i){
- var a=i.imgs||[];
- if(a.length<2)return thumb(i);
- return '<div id="gal" style="display:flex;width:100%;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch">'+a.map(function(u,k){return '<img src="'+esc(u)+'" alt="Photo '+(k+1)+' of '+a.length+'" style="flex:0 0 100%;width:100%;height:100%;object-fit:cover;scroll-snap-align:start">'}).join("")+'</div><span id="gc" style="position:absolute;right:10px;bottom:10px;background:rgba(0,0,0,.75);color:#fff;font-size:13px;padding:3px 10px;border-radius:99px">1 / '+a.length+'</span>';
-}
 function chips(){$("chips").innerHTML=cats.map(function(c){return '<button class="chip'+(c===cat?' on':'')+'" data-c="'+c+'">'+c+'</button>'}).join("")}
 function grid(){
  var q=$("q").value.toLowerCase();
@@ -100,7 +17,7 @@ function grid(){
 async function load(){
  var r=await db.from("listings").select("*").order("created_at",{ascending:false});
  if(r.error){$("grid").innerHTML="<p>Could not load listings. Please try again.</p>";return}
- items=r.data.map(function(x){return{id:x.id,u:x.user_id,t:x.title,p:x.price,c:x.category,l:x.area||"Nearby",d:x.description||"No description.",img:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls[0]:x.image_url),imgs:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls:(x.image_url?[x.image_url]:[]))}});
+ items=r.data.map(function(x){return{id:x.id,u:x.user_id,t:x.title,p:x.price,c:x.category,l:x.area||"Nearby",d:x.description||"No description.",img:x.image_url}});
  grid();
 }
 function authUI(){
@@ -142,7 +59,7 @@ async function loadMsgs(){
  rows.forEach(function(m){var d=document.createElement("div");d.className="m"+(m.sender_id===user.id?" me":"");d.textContent=m.body;$("msgs").appendChild(d)});
 }
 function fillSheet(){
- var sp=$("sp");sp.style.position="relative";sp.innerHTML=gal(cur);var gl=$("gal");if(gl){gl.onscroll=function(){var n=Math.round(gl.scrollLeft/gl.clientWidth)+1;$("gc").textContent=n+" / "+cur.imgs.length}}$("st").textContent=cur.t;$("sprice").textContent=money(cur.p);$("sl").textContent=cur.l;$("sd").textContent=cur.d;
+ $("sp").innerHTML=thumb(cur);$("st").textContent=cur.t;$("sprice").textContent=money(cur.p);$("sl").textContent=cur.l;$("sd").textContent=cur.d;
  ["edt","del","rep","editbox"].forEach(function(id){var o=$(id);if(o)o.remove()});
  if(user&&cur.u===user.id){
   var be=document.createElement("button");be.id="edt";be.className="btn alt";be.style.marginBottom="8px";be.textContent="Edit my listing";be.onclick=openEdit;
@@ -157,27 +74,22 @@ async function delListing(){
  if(!confirm("Delete this listing?"))return;
  var r=await db.from("listings").delete().eq("id",cur.id);
  if(r.error){alert(r.error.message);return}
- await rmPhotos(cur.imgs);
+ if(cur.img&&cur.img.indexOf("/listing-photos/")>-1){await db.storage.from("listing-photos").remove([cur.img.split("/listing-photos/")[1]])}
  $("sheet").classList.remove("on");load();
 }
 function openEdit(){
  if($("editbox")){$("editbox").remove();return}
  var box=document.createElement("div");box.id="editbox";box.style.margin="0 0 12px";
- box.innerHTML='<input id="et" placeholder="Item name"><input id="ep" type="number" inputmode="numeric" placeholder="Price in dollars"><select id="ec"></select><input id="el" placeholder="Your area"><textarea id="ed" rows="3" placeholder="Description"></textarea><p class="note">Photos</p><div id="epf"></div><div class="row"><button class="btn" id="es">Save changes</button><button class="btn alt" id="ex">Cancel</button></div>';
+ box.innerHTML='<input id="et" placeholder="Item name"><input id="ep" type="number" inputmode="numeric" placeholder="Price in dollars"><select id="ec"></select><input id="el" placeholder="Your area"><textarea id="ed" rows="3" placeholder="Description"></textarea><div class="row"><button class="btn" id="es">Save changes</button><button class="btn alt" id="ex">Cancel</button></div>';
  $("del").after(box);
  $("ec").innerHTML=cats.slice(1).map(function(c){return "<option>"+c+"</option>"}).join("");
  $("et").value=cur.t;$("ep").value=cur.p;$("ec").value=cur.c;$("el").value=cur.l==="Nearby"?"":cur.l;$("ed").value=cur.d==="No description."?"":cur.d;
- var em=photoMgr($("epf"),cur.imgs||[]);
  $("ex").onclick=function(){box.remove()};
  $("es").onclick=async function(){
   var t=$("et").value.trim(),p=$("ep").value;
   if(!t||!p){alert("Add an item name and a price.");return}
-  var sb=$("es");sb.disabled=true;sb.textContent="Saving...";
-  var urls;try{urls=await uploadAll(em)}catch(err){alert("Photo upload failed: "+err.message);sb.disabled=false;sb.textContent="Save changes";return}
-  var row={title:t,price:Number(p),category:$("ec").value,area:$("el").value.trim()||null,description:$("ed").value.trim()||null,image_url:urls[0]||null,image_urls:urls};
-  var r=await saveRow(function(o){return db.from("listings").update(o).eq("id",cur.id)},row);
-  if(r.error){alert("Could not save: "+r.error.message);sb.disabled=false;sb.textContent="Save changes";return}
-  await rmPhotos(em.gone);
+  var r=await db.from("listings").update({title:t,price:Number(p),category:$("ec").value,area:$("el").value.trim()||null,description:$("ed").value.trim()||null}).eq("id",cur.id);
+  if(r.error){alert("Could not save: "+r.error.message);return}
   var id=cur.id;await load();
   cur=items.filter(function(x){return x.id===id})[0]||cur;
   fillSheet();
@@ -213,18 +125,23 @@ $("ms").onclick=async function(){var v=$("mi").value.trim();
 };
 setInterval(function(){if($("sheet").classList.contains("on")&&cur)loadMsgs()},8000);
 $("pc").innerHTML='<option value="">Choose a category</option>'+cats.slice(1).map(function(c){return "<option>"+c+"</option>"}).join("");
-var pfBox=document.createElement("div");pfBox.id="pf";$("pb").before(pfBox);var pm=photoMgr(pfBox,[]);
+var pf=document.createElement("input");pf.type="file";pf.id="pf";pf.accept="image/jpeg,image/png,image/webp";pf.setAttribute("aria-label","Add a photo");$("pb").before(pf);
 $("pb").onclick=async function(){var t=$("pt").value.trim(),p=$("pp").value;
  if(!user){alert("Sign in first.");return}
  if(!t||!p){alert("Add an item name and a price.");return}
  if(!$("pc").value){alert("Choose a category.");return}
- var b=$("pb");b.disabled=true;b.textContent="Posting...";
- var urls;try{urls=await uploadAll(pm)}catch(err){alert("Photo upload failed: "+err.message);b.disabled=false;b.textContent="Post listing";return}
- var row={title:t,price:Number(p),category:$("pc").value,area:$("pl").value.trim()||null,description:$("pd").value.trim()||null,image_url:urls[0]||null,image_urls:urls};
- var r=await saveRow(function(o){return db.from("listings").insert(o)},row);
- b.disabled=false;b.textContent="Post listing";
- if(r.error){await rmPhotos(urls);alert("Could not post: "+r.error.message);return}
- ["pt","pp","pl","pd"].forEach(function(i){$(i).value=""});$("pc").value="";pm.reset();cat="All";chips();await load();show("browse")};
+ var url=null,f=$("pf").files[0];
+ if(f){
+  if(f.size>5242880){alert("That photo is over 5 MB. Choose a smaller one.");return}
+  var ext=f.type==="image/png"?"png":f.type==="image/webp"?"webp":"jpg";
+  var path=user.id+"/"+Date.now()+"."+ext;
+  var up=await db.storage.from("listing-photos").upload(path,f,{contentType:f.type});
+  if(up.error){alert("Photo upload failed: "+up.error.message);return}
+  url=db.storage.from("listing-photos").getPublicUrl(path).data.publicUrl;
+ }
+ var r=await db.from("listings").insert({title:t,price:Number(p),category:$("pc").value,area:$("pl").value.trim()||null,description:$("pd").value.trim()||null,image_url:url});
+ if(r.error){alert("Could not post: "+r.error.message);return}
+ ["pt","pp","pl","pd","pf"].forEach(function(i){$(i).value=""});$("pc").value="";cat="All";chips();await load();show("browse")};
 function show(t){document.querySelectorAll(".tab").forEach(function(e){e.classList.toggle("on",e.id===t)});
  document.querySelectorAll("nav button").forEach(function(b){b.classList.toggle("on",b.dataset.t===t)});window.scrollTo(0,0)}
 document.querySelector("nav").onclick=function(e){var b=e.target.closest("button");if(b)show(b.dataset.t)};
