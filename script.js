@@ -107,11 +107,15 @@ function authUI(){
  var box=$("authbox");
  if(!box){box=document.createElement("div");box.id="authbox";$("account").insertBefore(box,$("account").firstChild)}
  ["pt","pp","pc","pl","pd","pf","pb"].forEach(function(i){$(i).style.display=user?"":"none"});
- if(user){
+ if(recovering&&user){
+  box.innerHTML='<h2>Set a new password</h2><p class="note">Choose a new password for '+esc(user.email)+'.</p><input id="np" type="password" placeholder="New password (6 or more characters)" autocomplete="new-password"><button class="btn" id="npb" type="button">Save new password</button><p id="npm"></p>';
+  $("npb").onclick=async function(){var p=$("np").value;if(p.length<6){$("npm").textContent="Use at least 6 characters.";return}$("npb").disabled=true;var r=await db.auth.updateUser({password:p});if(r.error){$("npb").disabled=false;$("npm").textContent=r.error.message;return}recovering=false;alert("Your password was updated.");authUI()};
+ }else if(user){
   box.innerHTML='<h2>Account</h2><p class="note">Signed in as '+esc(user.email)+'</p><button class="btn alt" id="so" style="margin-bottom:12px">Sign out</button>';
   $("so").onclick=function(){db.auth.signOut()};
  }else{
-  box.innerHTML='<h2>Sign in to sell or message</h2><input id="ae" type="email" placeholder="Email"><input id="ap" type="password" placeholder="Password (6 or more characters)"><div class="row"><button class="btn" id="si">Sign in</button><button class="btn alt" id="su">Create account</button></div><p id="am"></p>';
+  box.innerHTML='<h2>Sign in to sell or message</h2><input id="ae" type="email" placeholder="Email"><input id="ap" type="password" placeholder="Password (6 or more characters)"><div class="row"><button class="btn" id="si">Sign in</button><button class="btn alt" id="su">Create account</button></div><button class="btn alt" id="fp" type="button" style="margin-top:10px">Forgot password?</button><p id="am"></p>';
+  $("fp").onclick=async function(){var e=$("ae").value.trim();if(!e){$("am").textContent="Type your email above first, then tap Forgot password.";return}$("fp").disabled=true;var r=await db.auth.resetPasswordForEmail(e,{redirectTo:location.origin+"/"});setTimeout(function(){if($("fp"))$("fp").disabled=false},30000);$("am").textContent=r.error?(/rate|seconds|too many/i.test(r.error.message||"")?"Please wait a minute before asking again.":r.error.message):"If that email has an account, we sent a link to reset your password. Check your inbox and spam folder."};
   $("si").onclick=async function(){var r=await db.auth.signInWithPassword({email:$("ae").value.trim(),password:$("ap").value});$("am").textContent=r.error?r.error.message:""};
   $("su").onclick=async function(){var r=await db.auth.signUp({email:$("ae").value.trim(),password:$("ap").value});$("am").textContent=r.error?r.error.message:(r.data.session?"":"Check your email to confirm your account.")};
  }
@@ -337,6 +341,7 @@ function validTab(t){var e=document.getElementById(t);return !!(e&&e.classList.c
 function hideSheet(){$("sheet").classList.remove("on");cur=null;thread=null;updateFab()}
 function openListing(it,tb){cur=it;thread=tb||null;fillSheet();$("sheet").classList.add("on");updateFab();window.scrollTo(0,0);loadMsgs()}
 function route(pop){
+ if(recovering){show("account",true);return}
  if(lbOpen&&!(history.state&&history.state.lb)){lbHide();return}
  var h=location.hash.slice(1);
  if(h.indexOf("listing-")===0){
@@ -347,7 +352,8 @@ function route(pop){
  openedByPush=false;hideSheet();show(validTab(h)?h:"browse",true);
 }
 window.addEventListener("popstate",function(){route(true)});
-db.auth.onAuthStateChange(function(ev,s){user=s?s.user:null;authUI()});
+var recovering=false;
+db.auth.onAuthStateChange(function(ev,s){user=s?s.user:null;if(ev==="PASSWORD_RECOVERY"){recovering=true;setTimeout(function(){if(typeof show==="function")show("account")},0)}if(ev==="SIGNED_OUT")recovering=false;authUI()});
 
 var sellerUid=null,sellerPushed=false;
 (function(){var st=document.createElement("style");st.textContent=".item .ph{position:relative}.heart{position:absolute;top:8px;right:8px;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;font-size:24px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer}.heart.on{color:#ff6b6b}.soldb{position:absolute;left:8px;top:8px;background:#b3261e;color:#fff;font-weight:700;font-size:12px;padding:3px 9px;border-radius:6px}.item.sold .ph img{opacity:.45}";document.head.appendChild(st)})();
