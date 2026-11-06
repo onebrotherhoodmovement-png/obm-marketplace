@@ -522,5 +522,32 @@ function renderMine(){
  M("apple-mobile-web-app-capable","yes");M("apple-mobile-web-app-title","OBM Exchange");
  if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(function(){});
 })();
+
+(function(){
+ var standalone=(window.matchMedia&&matchMedia("(display-mode: standalone)").matches)||navigator.standalone===true;
+ if(standalone)return;
+ try{var t=Number(localStorage.getItem("obm-ibar")||0);if(t&&Date.now()-t<7*86400000)return}catch(e){}
+ var ua=navigator.userAgent,ios=/iphone|ipad|ipod/i.test(ua),android=/android/i.test(ua);
+ if(!ios&&!android)return;
+ var bar=null,shown=false;
+ function hide(save){if(bar){bar.remove();bar=null}if(save){try{localStorage.setItem("obm-ibar",String(Date.now()))}catch(e){}}}
+ function show(kind){
+  if(shown)return;shown=true;
+  bar=document.createElement("div");bar.id="ibar";bar.setAttribute("role","region");bar.setAttribute("aria-label","Install the app");
+  bar.style.cssText="display:flex;align-items:center;gap:10px;background:#D9A521;color:#0C0B0A;padding:10px 12px;font:600 15px/1.3 system-ui,sans-serif";
+  bar.innerHTML='<img src="icon-512.png" alt="" width="40" height="40" style="border-radius:9px;flex:none"><div style="flex:1;min-width:0">Get the OBM Exchange app<br><span style="font-weight:400;font-size:13px">Opens in one tap. Free.</span></div><button id="ibgo" type="button" style="flex:none;background:#0C0B0A;color:#F4CA69;border:0;border-radius:99px;padding:11px 18px;font:700 15px system-ui,sans-serif;cursor:pointer">'+(kind==="ios"?"How":"Install")+'</button><button id="ibx" type="button" aria-label="Dismiss" style="flex:none;background:none;border:0;color:#0C0B0A;font-size:28px;line-height:1;width:40px;height:40px;cursor:pointer;padding:0">×</button>';
+  document.body.insertBefore(bar,document.body.firstChild);
+  document.getElementById("ibx").onclick=function(){hide(true)};
+  document.getElementById("ibgo").onclick=function(){
+   if(kind==="prompt"&&window.obmInstall){var p=window.obmInstall;p.prompt();p.userChoice.then(function(){window.obmInstall=null;hide(true)});return}
+   if(kind==="ios")alert("To install on iPhone:\n\n1. Tap the Share button at the bottom of Safari (the square with an arrow).\n2. Scroll down and tap Add to Home Screen.\n3. Tap Add.");
+   else alert("To install on Android:\n\n1. Tap the three dots at the top right of Chrome.\n2. Tap Install app (or Add to Home screen).\n3. Tap Install.");
+  };
+ }
+ window.addEventListener("beforeinstallprompt",function(){setTimeout(function(){if(window.obmInstall)show("prompt")},50)});
+ window.addEventListener("appinstalled",function(){hide(true)});
+ if(ios)setTimeout(function(){show("ios")},1500);
+ else setTimeout(function(){if(!shown)show("manual")},4000);
+})();
 if(!location.hash)history.replaceState(null,"","#browse");
 chips();authUI();load().then(function(){route();updateFab();inboxRefresh()});
