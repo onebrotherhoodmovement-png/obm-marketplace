@@ -419,10 +419,15 @@ function sheetExtras(){
  var mn=document.createElement("section");mn.className="tab";mn.id="mine";
  mn.innerHTML='<h2>My listings</h2><p class="note" id="minep"></p><div class="grid" id="minegrid"></div>';
  var ac=document.createElement("section");ac.className="tab";ac.id="account";
- ac.innerHTML='<div id="acctlinks" style="margin-top:8px"><button class="btn alt" id="lnkSaved" type="button" style="margin-bottom:10px">\u2665 Saved listings</button><button class="btn alt" id="lnkSafe" type="button" style="margin-bottom:10px">\u{1F6E1} Safety and rules</button><button class="btn alt" id="lnkMain" type="button">OBM main site</button></div>';
+ ac.innerHTML='<div id="acctlinks" style="margin-top:8px"><button class="btn alt" id="lnkSaved" type="button" style="margin-bottom:10px">\u2665 Saved listings</button><button class="btn alt" id="lnkSafe" type="button" style="margin-bottom:10px">\u{1F6E1} Safety and rules</button><button class="btn alt" id="lnkMain" type="button" style="margin-bottom:10px">OBM main site</button><button class="btn" id="lnkInstall" type="button" style="margin-bottom:10px;display:none">Install the app</button><button class="btn alt" id="lnkPriv" type="button" style="margin-bottom:10px">Privacy policy</button><button class="btn alt" id="lnkTerms" type="button">Terms of use</button></div>';
  post.after(ac);post.after(mn);post.after(ib);
  nav.innerHTML='<button class="on" data-t="browse"><i>\u{1F3E0}</i>Home</button><button data-t="inbox"><i>\u{1F4AC}<span id="badge" class="badge" style="display:none"></span></i>Inbox</button><button data-t="post"><i>\uFF0B</i>Post</button><button data-t="mine"><i>\u{1F4CB}</i>Listings</button><button data-t="account"><i>\u{1F464}</i>Account</button>';
  $("lnkSaved").onclick=function(){show("saved")};$("lnkSafe").onclick=function(){show("safety")};$("lnkMain").onclick=function(){location.href="https://www.onebrotherhoodmovement.com"};
+ $("lnkPriv").onclick=function(){location.href="privacy.html"};$("lnkTerms").onclick=function(){location.href="terms.html"};
+ var standalone=(window.matchMedia&&matchMedia("(display-mode: standalone)").matches)||navigator.standalone===true;
+ var ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+ if(!standalone&&ios){$("lnkInstall").style.display="";$("lnkInstall").textContent="Add to Home Screen";$("lnkInstall").onclick=function(){alert("Tap the Share button in Safari, then tap Add to Home Screen.")}}
+ window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.obmInstall=e;if(!standalone){$("lnkInstall").style.display="";$("lnkInstall").onclick=function(){var p=window.obmInstall;if(!p)return;p.prompt();p.userChoice.then(function(){$("lnkInstall").style.display="none";window.obmInstall=null})}}});
  $("minegrid").onclick=gridClick;
  var fab=document.createElement("button");fab.id="fab";fab.type="button";fab.setAttribute("aria-label","Post an item");fab.innerHTML="\uFF0B Post";fab.onclick=function(){show("post")};document.body.appendChild(fab);
  $("savedgrid").onclick=gridClick;$("sellgrid").onclick=gridClick;
@@ -505,6 +510,17 @@ function renderMine(){
   inboxRefresh();
  };
  setInterval(function(){if(user)inboxRefresh()},30000);
+})();
+
+(function(){
+ var h=document.head;
+ function L(rel,href){var l=document.createElement("link");l.rel=rel;l.href=href;h.appendChild(l)}
+ function M(n,c){var m=document.createElement("meta");m.name=n;m.content=c;h.appendChild(m)}
+ if(!document.querySelector('link[rel="manifest"]'))L("manifest","manifest.json");
+ if(!document.querySelector('link[rel="apple-touch-icon"]'))L("apple-touch-icon","icon-512.png");
+ if(!document.querySelector('meta[name="theme-color"]'))M("theme-color","#0C0B0A");
+ M("apple-mobile-web-app-capable","yes");M("apple-mobile-web-app-title","OBM Exchange");
+ if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(function(){});
 })();
 if(!location.hash)history.replaceState(null,"","#browse");
 chips();authUI();load().then(function(){route();updateFab();inboxRefresh()});
