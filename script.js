@@ -26,6 +26,8 @@ function normCat(c){c=c||"";if(LEGACY[c])return LEGACY[c];return c||("General"+S
 function mainOf(c){return String(c||"").split(SEP)[0]}
 function subOf(c){var a=String(c||"").split(SEP);return a[1]||""}
 function catOptions(){return TAX.map(function(t){return '<optgroup label="'+esc(t[0])+'">'+t[2].map(function(x){var v=t[0]+SEP+x;return '<option value="'+esc(v)+'">'+esc(x)+'</option>'}).join("")+'</optgroup>'}).join("")}
+var profilesOK=false,names={},OWNER="onebrotherhoodmovement@gmail.com",RESERVED=/(^|[^a-z0-9])obm([^a-z0-9]|$)|one\s*brotherhood|admin|official|moderator|odessa\s*meats/i;
+function nameOf(u){return names[u]||("Brother "+String(u||"").slice(0,4))}
 var blocked=[],blkFor="",myArea="",onlyArea=false;try{myArea=localStorage.getItem("obm-area")||""}catch(e){}
 var items=[],cat="All",sub="",cur=null,user=null,thread=null;
 function $(i){return document.getElementById(i)}
@@ -138,6 +140,7 @@ function grid(){
  $("grid").innerHTML=list.length?list.map(card).join(""):(onlyArea&&myArea.trim()?'<p>No listings in your area yet. Untick "Only my area" to see everything.</p>':'<p>No listings yet. Sign in on the Account tab, then tap Post to list the first one.</p>');
 }
 async function load(){
+ var pr=await db.from("profiles").select("user_id,display_name").limit(3000);profilesOK=!pr.error;if(!pr.error){names={};pr.data.forEach(function(x){names[x.user_id]=x.display_name});var dn0=$("dn");if(dn0&&user&&document.activeElement!==dn0&&!dn0.value)dn0.value=names[user.id]||""}
  var r=await db.from("listings").select("*").order("created_at",{ascending:false});
  if(r.error){$("grid").innerHTML="<p>Could not load listings. Please try again.</p>";return}
  items=r.data.map(function(x){return{id:x.id,u:x.user_id,sold:!!x.sold,at:x.created_at,t:x.title,p:x.price,c:normCat(x.category),l:x.area||"Nearby",d:x.description||"No description.",img:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls[0]:x.image_url),imgs:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls:(x.image_url?[x.image_url]:[]))}}).filter(function(i){return blocked.indexOf(i.u)<0});
@@ -153,7 +156,7 @@ function drawBlocked(){
  var bx=$("blkbox");if(bx)bx.remove();
  if(!user||!blocked.length||!$("authbox"))return;
  bx=document.createElement("div");bx.id="blkbox";bx.style.margin="0 0 14px";
- bx.innerHTML='<h3>Blocked sellers</h3>'+blocked.map(function(id){return '<div class="row" style="align-items:center;margin-bottom:6px"><span style="flex:1">Seller '+esc(id.slice(0,6))+'</span><button class="btn alt" type="button" data-u="'+esc(id)+'" style="flex:0 0 auto;width:auto;padding:8px 14px">Unblock</button></div>'}).join("");
+ bx.innerHTML='<h3>Blocked sellers</h3>'+blocked.map(function(id){return '<div class="row" style="align-items:center;margin-bottom:6px"><span style="flex:1">'+esc(nameOf(id))+'</span><button class="btn alt" type="button" data-u="'+esc(id)+'" style="flex:0 0 auto;width:auto;padding:8px 14px">Unblock</button></div>'}).join("");
  $("authbox").after(bx);
  bx.onclick=async function(e){var b=e.target.closest("button");if(!b)return;b.disabled=true;var r=await db.from("blocks").delete().eq("blocked_id",b.dataset.u);if(r.error){b.disabled=false;alert("Could not unblock: "+r.error.message);return}blocked=blocked.filter(function(x){return x!==b.dataset.u});await load();drawBlocked()}
 }
@@ -174,8 +177,16 @@ function authUI(){
   box.innerHTML='<h2>Set a new password</h2><p class="note">Choose a new password for '+esc(user.email)+'.</p><input id="np" type="password" placeholder="New password (6 or more characters)" autocomplete="new-password"><button class="btn" id="npb" type="button">Save new password</button><p id="npm"></p>';
   $("npb").onclick=async function(){var p=$("np").value;if(p.length<6){$("npm").textContent="Use at least 6 characters.";return}$("npb").disabled=true;var r=await db.auth.updateUser({password:p});if(r.error){$("npb").disabled=false;$("npm").textContent=r.error.message;return}recovering=false;alert("Your password was updated.");authUI()};
  }else if(user){
-  box.innerHTML='<h2>Account</h2><p class="note">Signed in as '+esc(user.email)+'</p><button class="btn alt" id="so" style="margin-bottom:12px">Sign out</button>';
+  box.innerHTML='<h2>Account</h2><p class="note">Signed in as '+esc(user.email)+'</p><h3>Display name</h3><p class="note">Buyers and sellers see this name instead of your email.</p><input id="dn" maxlength="30" placeholder="Your name (2 to 30 characters)" value="'+esc(names[user.id]||"")+'"><button class="btn" id="dns" type="button" style="margin-bottom:12px">Save name</button><p id="dnm"></p><button class="btn alt" id="so" style="margin-bottom:12px">Sign out</button>';
   $("so").onclick=function(){db.auth.signOut()};
+  $("dns").onclick=async function(){var v=$("dn").value.trim().replace(/\s+/g," ");
+   if(v.length<2||v.length>30){$("dnm").textContent="Use 2 to 30 characters.";return}
+   if(RESERVED.test(v)&&user.email!==OWNER){$("dnm").textContent="That name is reserved. Please choose another.";return}
+   $("dns").disabled=true;$("dnm").textContent="Saving...";
+   var r=await db.from("profiles").upsert({user_id:user.id,display_name:v},{onConflict:"user_id"});
+   $("dns").disabled=false;
+   if(r.error){$("dnm").textContent=r.error.code==="23505"?"That name is already taken. Try another.":r.error.message;return}
+   names[user.id]=v;$("dnm").textContent="Saved. You show as "+v+".";grid()};
  }else{
   box.innerHTML='<h2>Sign in to sell or message</h2><input id="ae" type="email" placeholder="Email"><input id="ap" type="password" placeholder="Password (6 or more characters)"><div class="row"><button class="btn" id="si">Sign in</button><button class="btn alt" id="su">Create account</button></div><button class="btn alt" id="fp" type="button" style="margin-top:10px">Forgot password?</button><p id="am"></p>';
   $("fp").onclick=async function(){var e=$("ae").value.trim();if(!e){$("am").textContent="Type your email above first, then tap Forgot password.";return}$("fp").disabled=true;var r=await db.auth.resetPasswordForEmail(e,{redirectTo:location.origin+"/"});setTimeout(function(){if($("fp"))$("fp").disabled=false},30000);$("am").textContent=r.error?(/rate|seconds|too many/i.test(r.error.message||"")?"Please wait a minute before asking again.":r.error.message):"If that email has an account, we sent a link to reset your password. Check your inbox and spam folder."};
@@ -201,7 +212,7 @@ async function loadMsgs(){
   rows.forEach(function(m){if(!seen[m.buyer_id]){seen[m.buyer_id]=++n;ids.push(m.buyer_id)}});
   if(!ids.length){note("No messages yet.");return}
   note("Buyers who messaged you:");
-  ids.forEach(function(id){var b=document.createElement("button");b.className="btn alt";b.textContent="Buyer "+seen[id];b.onclick=function(){thread=id;loadMsgs()};$("msgs").appendChild(b)});
+  ids.forEach(function(id){var b=document.createElement("button");b.className="btn alt";b.textContent=names[id]||("Buyer "+seen[id]);b.onclick=function(){thread=id;loadMsgs()};$("msgs").appendChild(b)});
   return;
  }
  if(owner){var bk=document.createElement("button");bk.className="btn alt";bk.textContent="All buyers";bk.onclick=function(){thread=null;loadMsgs()};$("msgs").appendChild(bk)}
@@ -220,6 +231,8 @@ function fillSheet(){
   var bb=document.createElement("button");bb.id="blk";bb.className="btn alt";bb.style.marginBottom="8px";bb.textContent="Block this seller";bb.onclick=blockSeller;
   $("sd").after(br);br.after(bb);
  }
+ var sb0=$("sby");if(sb0)sb0.remove();
+ var sby=document.createElement("p");sby.id="sby";sby.className="note";sby.style.margin="0 0 8px";sby.textContent="Sold by "+nameOf(cur.u);$("sd").before(sby);
  sheetExtras();
 }
 async function delListing(){
@@ -292,6 +305,7 @@ setInterval(function(){if($("sheet").classList.contains("on")&&cur)loadMsgs()},8
 $("pc").innerHTML='<option value="">Choose a category</option>'+catOptions();
 var pfBox=document.createElement("div");pfBox.id="pf";$("pb").before(pfBox);var pm=photoMgr(pfBox,[]);
 $("pb").onclick=async function(){var t=$("pt").value.trim(),p=$("pp").value;
+ if(profilesOK&&!names[user.id]){alert("Please choose a display name first. Go to Account, type your name, and tap Save name.");show("account");return}
  if(!user){alert("Sign in first.");return}
  if(!t||!p){alert("Add an item name and a price.");return}
  if(!$("pc").value){alert("Choose a category.");return}
@@ -444,7 +458,7 @@ function favLabel(){$("fav").textContent=favHas(cur.id)?"\u2665 Saved":"\u2661 S
 function showSeller(uid,fromRoute){
  hideSheet();
  var list=items.filter(function(i){return i.u===uid}),mine=user&&user.id===uid;
- $("sellh").textContent=mine?"My listings":"Seller\u2019s listings";
+ $("sellh").textContent=mine?"My listings":nameOf(uid)+"\u2019s listings";
  var first=list.map(function(i){return i.at}).filter(Boolean).sort()[0],sold=list.filter(function(i){return i.sold}).length;
  $("sellp").textContent=list.length+" listing"+(list.length===1?"":"s")+(sold?" \u00B7 "+sold+" sold":"")+(first?" \u00B7 Selling since "+new Date(first).toLocaleDateString("en-US",{month:"short",year:"numeric"}):"");
  sellerUid=uid;
@@ -471,7 +485,7 @@ function sheetExtras(){
  var a=$("sd"),mine=user&&cur.u===user.id;
  var acts=document.createElement("div");acts.id="acts";acts.className="row";acts.style.marginBottom="8px";
  acts.innerHTML='<button class="btn alt" id="shr" type="button">Share</button><button class="btn alt" id="fav" type="button"></button>';
- var sb=document.createElement("button");sb.id="sellbtn";sb.className="btn alt";sb.style.marginBottom="8px";sb.textContent=mine?"My listings":"More from this seller";sb.onclick=function(){showSeller(cur.u)};
+ var sb=document.createElement("button");sb.id="sellbtn";sb.className="btn alt";sb.style.marginBottom="8px";sb.textContent=mine?"My listings":"More from "+nameOf(cur.u);sb.onclick=function(){showSeller(cur.u)};
  if(mine){var so=document.createElement("button");so.id="sldbtn";so.className="btn alt";so.style.marginBottom="8px";so.textContent=cur.sold?"Mark as available":"Mark as sold";so.onclick=toggleSold;a.after(so)}
  a.after(sb);a.after(acts);
  $("shr").onclick=shareListing;
@@ -546,7 +560,7 @@ function drawInbox(){
  var seen=seenGet()||{};
  L.innerHTML=threadsCache.map(function(t,i){
   var it=items.filter(function(x){return String(x.id)===String(t.lid)})[0],un=isUnread(t,seen),mine=it&&it.u===user.id;
-  return '<button class="thread'+(un?' unread':'')+'" data-i="'+i+'"><b>'+esc(it?it.t:"Removed listing")+(un?'<span class="new">NEW</span>':'')+'</b><small>'+(mine?"Buyer message":"Your chat with the seller")+' \u00B7 '+ago(t.last.created_at)+'</small><br><span>'+esc(String(t.last.body).slice(0,90))+'</span></button>';
+  return '<button class="thread'+(un?' unread':'')+'" data-i="'+i+'"><b>'+esc(it?it.t:"Removed listing")+(un?'<span class="new">NEW</span>':'')+'</b><small>'+(mine?"Message from "+nameOf(t.buyer):"Your chat with "+nameOf(it?it.u:""))+' \u00B7 '+ago(t.last.created_at)+'</small><br><span>'+esc(String(t.last.body).slice(0,90))+'</span></button>';
  }).join("");
 }
 async function renderInbox(){
