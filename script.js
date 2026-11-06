@@ -549,5 +549,6 @@ function renderMine(){
  if(ios)setTimeout(function(){show("ios")},1500);
  else setTimeout(function(){if(!shown)show("manual")},4000);
 })();
+(function(){var st=document.createElement("style");st.textContent="@media(min-width:900px){main{max-width:1100px}.grid{grid-template-columns:repeat(4,1fr);gap:16px}.item .ph{height:170px}#post,#account,#inbox,#safety{max-width:720px;margin-left:auto;margin-right:auto}nav{max-width:720px;margin:0 auto;border-radius:12px 12px 0 0}#fab{right:max(16px,calc((100vw - 1100px)/2 + 16px))}.sheet{padding-left:max(16px,calc((100% - 1040px)/2));padding-right:max(16px,calc((100% - 1040px)/2))}.sheet #sp{float:left;width:58%;height:540px;margin:12px 0 0;font-size:96px}.sheet #sp img{object-fit:contain!important;background:#0c0b08}.sheet>*:not(#back):not(#sp){margin-left:calc(60% + 24px)}.sheet>.btn:not(#back){width:calc(40% - 24px)}.sheet>#back{margin-bottom:0}}";document.head.appendChild(st)})();
 if(!location.hash)history.replaceState(null,"","#browse");
 chips();authUI();load().then(function(){route();updateFab();inboxRefresh()});
