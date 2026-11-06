@@ -1,13 +1,36 @@
 var SUPA_URL="https://wmgeruhdfcsjarktuzpd.supabase.co";
 var SUPA_KEY="sb_publishable_q7dolXz8rixOUnsxNzdheQ_zSM86bPa";
 var db=supabase.createClient(SUPA_URL,SUPA_KEY);
-var cats=["All","Electronics","Furniture","Clothing","Tools","Vehicles","Home","Other"];
-var icons={Electronics:"\u{1F4F1}",Furniture:"\u{1F6CB}",Clothing:"\u{1F455}",Tools:"\u{1F527}",Vehicles:"\u{1F6B2}",Home:"\u{1F3E0}",Other:"\u{1F4E6}"};
-var items=[],cat="All",cur=null,user=null,thread=null;
+var SEP=" \u203A ";
+var TAX=[
+["Electronics & Media","\u{1F4F1}",["Audio & Speakers","Cell phones & Accessories","Cameras & Photography","TVs & Media players","Video games & Consoles","Computers & Accessories","Books, Movies, & Music","Wearables","Drones","Virtual reality","3D Printers & Supplies","Other - Electronics & Media"]],
+["Home & Garden","\u{1F3E0}",["Furniture","Household","Appliances","Kitchen & Dining","Bathroom","Tools & Machinery","Home improvement","Lawn & Garden","Home decor","Other - Home & Garden"]],
+["Clothing, Shoes, & Accessories","\u{1F455}",["Women's clothing","Men's clothing","Women's shoes","Men's shoes","Jewelry & Accessories","Girls' clothing","Boys' clothing","Baby & Toddler girl clothing","Baby & Toddler boy clothing","Baby & Toddler accessories","Girls' shoes","Girls' accessories","Boys' shoes","Boys' accessories","Other - Clothing, Shoes, & Accessories"]],
+["Baby & Kids","\u{1F37C}",["Girls' accessories","Boys' accessories","Bathing & Skincare","Car seats & Accessories","Diapering","Feeding","Baby gear","Health & Baby care","Nursery furniture & Decor","Potty training","Pregnancy & Maternity","Baby safety","Strollers & Accessories","Baby toys","Other - Baby & Kids"]],
+["Vehicles","\u{1F697}",["Cars & Trucks","Motorcycles & Powersports","RVs & Campers","Trailers","Boats & Watercraft","Auto parts","Tires & Wheels","Car audio & Electronics","Other - Vehicles"]],
+["Toys, Games, & Hobbies","\u{1F9E9}",["Toys","Games & Puzzles","Outdoor toys & Games","Stuffed animals & Plush","Dress up & Pretend","Trading cards","Musical instruments","Other - Toys, Games, & Hobbies"]],
+["Sports & Outdoors","\u{1F3C0}",["Exercise","Yoga & Pilates","Mixed martial arts & Boxing","Bikes & Cycling","Skateboarding","Fishing","Camping & Hiking","Water sports","Ice & Snow sports","Lawn games","Team sports","Golf","Fan shop","Other - Sports & Outdoors"]],
+["Collectibles & Art","\u{1F3FA}",["Art","Antiques","Coins & Currency","Memorabilia","Other - Collectibles & Art"]],
+["Pet supplies","\u{1F415}",["Pet collars & Leashes","Pet clothing, Accessories, & Shoes","Pet toys","Pet feeding","Pet bedding","Pet furniture","Pet carriers & Houses","Pet health & Wellness","Training","Pet gates & Fences","Other - Pet supplies"]],
+["Health & Beauty","\u{1F49C}",["Hair care","Bath & Body","Makeup & Cosmetics","Skincare","Fragrance","Personal care","Tools & Accessories","Other - Health & Beauty"]],
+["Wedding","\u{1F48D}",["Jewelry","Invitations & Paper","Gifts & Mementos","Decorations","Accessories","Clothing","Shoes","Other - Wedding"]],
+["Business equipment","\u{1F4BC}",["Farming & Agriculture","Building materials & Supplies","Cleaning & Janitorial supplies","Electrical equipment & Supplies","Facility maintenance & Safety","Fasteners & Hardware","HVAC","Light industrial equipment & Tools","Material handling","Office equipment & Supplies","Restaurant & Food service equipment","Printing & Graphic arts","Retail & Services","Industrial fuel & Energy equipment","Other - Business equipment"]],
+["Food & Farm","\u{1F969}",["Meat & Seafood","Produce","Baked goods","Farm animals & Livestock","Other - Food & Farm"]],
+["Tickets","\u{1F3AB}",["Concerts","Sports","Theater","Theme parks","Other - Tickets"]],
+["General","\u{1F4E6}",["Free stuff","Miscellaneous","Other - General"]]
+];
+var cats=["All"].concat(TAX.map(function(t){return t[0]}));
+var icons={};TAX.forEach(function(t){icons[t[0]]=t[1]});icons.Other=icons.General;
+var LEGACY={"Electronics":"Electronics & Media"+SEP+"Other - Electronics & Media","Furniture":"Home & Garden"+SEP+"Furniture","Clothing":"Clothing, Shoes, & Accessories"+SEP+"Other - Clothing, Shoes, & Accessories","Tools":"Home & Garden"+SEP+"Tools & Machinery","Vehicles":"Vehicles"+SEP+"Other - Vehicles","Home":"Home & Garden"+SEP+"Other - Home & Garden","Other":"General"+SEP+"Other - General"};
+function normCat(c){c=c||"";if(LEGACY[c])return LEGACY[c];return c||("General"+SEP+"Other - General")}
+function mainOf(c){return String(c||"").split(SEP)[0]}
+function subOf(c){var a=String(c||"").split(SEP);return a[1]||""}
+function catOptions(){return TAX.map(function(t){return '<optgroup label="'+esc(t[0])+'">'+t[2].map(function(x){var v=t[0]+SEP+x;return '<option value="'+esc(v)+'">'+esc(x)+'</option>'}).join("")+'</optgroup>'}).join("")}
+var items=[],cat="All",sub="",cur=null,user=null,thread=null;
 function $(i){return document.getElementById(i)}
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function money(n){return "$"+Number(n).toLocaleString("en-US")}
-function thumb(i){return i.img?'<img src="'+esc(i.img)+'" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">':(icons[i.c]||icons.Other)}
+function thumb(i){return i.img?'<img src="'+esc(i.img)+'" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">':(icons[mainOf(i.c)]||icons.Other)}
 var MAXP=6;
 function shrink(f){
  return new Promise(function(res){
@@ -91,16 +114,20 @@ function gal(i){
  if(a.length<2)return thumb(i);
  return '<div id="gal" style="display:flex;width:100%;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch">'+a.map(function(u,k){return '<img src="'+esc(u)+'" alt="Photo '+(k+1)+' of '+a.length+'" style="flex:0 0 100%;width:100%;height:100%;object-fit:cover;scroll-snap-align:start">'}).join("")+'</div><span id="gc" style="position:absolute;right:10px;bottom:10px;background:rgba(0,0,0,.75);color:#fff;font-size:13px;padding:3px 10px;border-radius:99px">1 / '+a.length+'</span>';
 }
-function chips(){$("chips").innerHTML=cats.map(function(c){return '<button class="chip'+(c===cat?' on':'')+'" data-c="'+c+'">'+c+'</button>'}).join("")}
+function chips(){$("chips").innerHTML=cats.map(function(c){return '<button class="chip'+(c===cat?' on':'')+'" data-c="'+esc(c)+'">'+esc(c)+'</button>'}).join("");
+ var sc=$("subchips");if(!sc){sc=document.createElement("div");sc.id="subchips";sc.className="chips";$("chips").after(sc)}
+ var t=TAX.filter(function(x){return x[0]===cat})[0];
+ if(!t){sc.innerHTML="";sc.style.display="none";return}
+ sc.style.display="";sc.innerHTML='<button class="chip'+(sub===""?' on':'')+'" data-s="">All '+esc(cat)+'</button>'+t[2].map(function(x){return '<button class="chip'+(sub===x?' on':'')+'" data-s="'+esc(x)+'">'+esc(x)+'</button>'}).join("")}
 function grid(){
  var q=$("q").value.toLowerCase();
- var list=items.filter(function(i){return (cat==="All"||i.c===cat)&&(i.t+i.d+i.l).toLowerCase().indexOf(q)>-1});
+ var list=items.filter(function(i){return (cat==="All"||mainOf(i.c)===cat)&&(!sub||subOf(i.c)===sub)&&(i.t+i.d+i.l+" "+i.c).toLowerCase().indexOf(q)>-1});
  $("grid").innerHTML=list.length?sortSold(list).map(card).join(""):'<p>No listings yet. Sign in on the Account tab, then tap Post to list the first one.</p>';
 }
 async function load(){
  var r=await db.from("listings").select("*").order("created_at",{ascending:false});
  if(r.error){$("grid").innerHTML="<p>Could not load listings. Please try again.</p>";return}
- items=r.data.map(function(x){return{id:x.id,u:x.user_id,sold:!!x.sold,at:x.created_at,t:x.title,p:x.price,c:x.category,l:x.area||"Nearby",d:x.description||"No description.",img:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls[0]:x.image_url),imgs:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls:(x.image_url?[x.image_url]:[]))}});
+ items=r.data.map(function(x){return{id:x.id,u:x.user_id,sold:!!x.sold,at:x.created_at,t:x.title,p:x.price,c:normCat(x.category),l:x.area||"Nearby",d:x.description||"No description.",img:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls[0]:x.image_url),imgs:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls:(x.image_url?[x.image_url]:[]))}});
  grid();
 }
 function authUI(){
@@ -171,8 +198,8 @@ function openEdit(){
  var box=document.createElement("div");box.id="editbox";box.style.margin="0 0 12px";
  box.innerHTML='<input id="et" placeholder="Item name"><input id="ep" type="number" inputmode="numeric" placeholder="Price in dollars"><select id="ec"></select><input id="el" placeholder="Your area"><textarea id="ed" rows="3" placeholder="Description"></textarea><p class="note">Photos</p><div id="epf"></div><div class="row"><button class="btn" id="es">Save changes</button><button class="btn alt" id="ex">Cancel</button></div>';
  $("del").after(box);
- $("ec").innerHTML=cats.slice(1).map(function(c){return "<option>"+c+"</option>"}).join("");
- $("et").value=cur.t;$("ep").value=cur.p;$("ec").value=cur.c;$("el").value=cur.l==="Nearby"?"":cur.l;$("ed").value=cur.d==="No description."?"":cur.d;
+ $("ec").innerHTML=catOptions();
+ $("et").value=cur.t;$("ep").value=cur.p;$("ec").value=cur.c;if(!$("ec").value)$("ec").value="General"+SEP+"Other - General";$("el").value=cur.l==="Nearby"?"":cur.l;$("ed").value=cur.d==="No description."?"":cur.d;
  var em=photoMgr($("epf"),cur.imgs||[]);
  $("ex").onclick=function(){box.remove()};
  $("es").onclick=async function(){
@@ -200,7 +227,8 @@ async function reportListing(){
 }
 var rb=document.querySelector("#safety .btn.alt");
 if(rb)rb.onclick=function(){alert("To report a listing, open it and tap Report listing.")};
-$("chips").onclick=function(e){if(e.target.dataset.c){cat=e.target.dataset.c;chips();grid()}};
+$("chips").onclick=function(e){var b=e.target.closest("button");if(b&&b.dataset.c!==undefined){cat=b.dataset.c;sub="";chips();grid()}};
+document.addEventListener("click",function(e){var b=e.target.closest&&e.target.closest("#subchips button");if(b){sub=b.dataset.s||"";chips();grid()}});
 $("q").oninput=grid;
 function gridClick(e){
  var h=e.target.closest(".heart");
@@ -224,7 +252,7 @@ $("ms").onclick=async function(){var v=$("mi").value.trim();
  if(/zelle|cash ?app|gift ?card|venmo|deposit|western union/i.test(v)){note("Safety reminder: never send money before you meet. Pay in person after you check the item.")}
 };
 setInterval(function(){if($("sheet").classList.contains("on")&&cur)loadMsgs()},8000);
-$("pc").innerHTML='<option value="">Choose a category</option>'+cats.slice(1).map(function(c){return "<option>"+c+"</option>"}).join("");
+$("pc").innerHTML='<option value="">Choose a category</option>'+catOptions();
 var pfBox=document.createElement("div");pfBox.id="pf";$("pb").before(pfBox);var pm=photoMgr(pfBox,[]);
 $("pb").onclick=async function(){var t=$("pt").value.trim(),p=$("pp").value;
  if(!user){alert("Sign in first.");return}
@@ -236,13 +264,13 @@ $("pb").onclick=async function(){var t=$("pt").value.trim(),p=$("pp").value;
  var r=await saveRow(function(o){return db.from("listings").insert(o)},row);
  b.disabled=false;b.textContent="Post listing";
  if(r.error){await rmPhotos(urls);alert("Could not post: "+r.error.message);return}
- ["pt","pp","pl","pd"].forEach(function(i){$(i).value=""});$("pc").value="";pm.reset();cat="All";chips();await load();show("browse")};
+ ["pt","pp","pl","pd"].forEach(function(i){$(i).value=""});$("pc").value="";pm.reset();cat="All";sub="";chips();await load();show("browse")};
 function show(t,np){document.querySelectorAll(".tab").forEach(function(e){e.classList.toggle("on",e.id===t)});
  document.querySelectorAll("nav button").forEach(function(b){b.classList.toggle("on",b.dataset.t===(NAVMAP[t]||t))});window.scrollTo(0,0);
  if(t==="saved")renderSaved();
  curTab=t;if(t==="inbox")renderInbox();if(t==="mine")renderMine();updateFab();
  if(!np&&location.hash!=="#"+t)history.pushState(null,"","#"+t)}
-document.querySelector("nav").onclick=function(e){var b=e.target.closest("button");if(b){if($("sheet").classList.contains("on")){hideSheet();openedByPush=false}show(b.dataset.t);if(b.dataset.t==="browse"){cat="All";$("q").value="";chips();grid();window.scrollTo(0,0)}}};
+document.querySelector("nav").onclick=function(e){var b=e.target.closest("button");if(b){if($("sheet").classList.contains("on")){hideSheet();openedByPush=false}show(b.dataset.t);if(b.dataset.t==="browse"){cat="All";sub="";$("q").value="";chips();grid();window.scrollTo(0,0)}}};
 var openedByPush=false;
 
 var lb=null,lbI=[],lbK=0,lbOpen=false,Z={s:1,x:0,y:0};
