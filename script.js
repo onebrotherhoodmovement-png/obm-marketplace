@@ -26,6 +26,50 @@ function normCat(c){c=c||"";if(LEGACY[c])return LEGACY[c];return c||("General"+S
 function mainOf(c){return String(c||"").split(SEP)[0]}
 function subOf(c){var a=String(c||"").split(SEP);return a[1]||""}
 function catOptions(){return TAX.map(function(t){return '<optgroup label="'+esc(t[0])+'">'+t[2].map(function(x){var v=t[0]+SEP+x;return '<option value="'+esc(v)+'">'+esc(x)+'</option>'}).join("")+'</optgroup>'}).join("")}
+var ratings=[],ratingsOK=false;
+function rStat(u){var a=ratings.filter(function(r){return r.ratee_id===u&&blocked.indexOf(r.rater_id)<0});if(!a.length)return null;var t=0;a.forEach(function(r){t+=r.stars});return{n:a.length,avg:t/a.length}}
+function rTxt(u){var x=rStat(u);return x?" \u2605 "+x.avg.toFixed(1)+" ("+x.n+")":""}
+function stars(n){return "\u2605\u2605\u2605\u2605\u2605".slice(0,n)+"\u2606\u2606\u2606\u2606\u2606".slice(0,5-n)}
+function hasRated(ratee,lid){return !!user&&ratings.some(function(r){return r.rater_id===user.id&&r.ratee_id===ratee&&String(r.listing_id)===String(lid)})}
+function rateBox(ratee,lid,anchor){
+ var old=$("ratebox");if(old)old.remove();
+ var b=document.createElement("div");b.id="ratebox";b.className="m";b.style.margin="0 0 10px";var v=0;
+ b.innerHTML='<h3>Rate '+esc(nameOf(ratee))+'</h3><div id="rstars" style="font-size:34px;letter-spacing:6px;cursor:pointer;color:var(--gold)" role="group" aria-label="Stars"></div><textarea id="rcm" rows="2" maxlength="300" placeholder="Optional: how did it go? (300 characters)"></textarea><div class="row"><button class="btn" id="rsub" type="button">Submit rating</button><button class="btn alt" id="rcan" type="button">Cancel</button></div><p id="rmsg"></p>';
+ anchor(b);
+ function draw(){$("rstars").innerHTML=[1,2,3,4,5].map(function(i){return '<span data-v="'+i+'" role="button" aria-label="'+i+' star'+(i>1?"s":"")+'">'+(i<=v?"\u2605":"\u2606")+'</span>'}).join("")}
+ draw();$("rstars").onclick=function(e){var t=e.target.closest("[data-v]");if(t){v=+t.dataset.v;draw()}};
+ $("rcan").onclick=function(){b.remove()};
+ $("rsub").onclick=async function(){
+  if(!v){$("rmsg").textContent="Tap a star first.";return}
+  $("rsub").disabled=true;$("rmsg").textContent="Saving...";
+  var row={ratee_id:ratee,listing_id:String(lid),stars:v,comment:$("rcm").value.trim()||null};
+  var r=await db.from("ratings").insert(row).select().single();
+  if(r.error){$("rsub").disabled=false;$("rmsg").textContent=r.error.code==="23505"?"You already rated this one.":r.error.message;return}
+  ratings.unshift(r.data);b.remove();alert("Thank you. Your rating was saved.");
+  if(cur){fillSheet();loadMsgs()}
+ }
+}
+async function rateSetup(){
+ var o=$("ratebtn");if(o)o.remove();var o2=$("ratebox");if(o2)o2.remove();
+ if(!ratingsOK||!user||!cur||!cur.sold)return;
+ var cid=cur.id;
+ if(cur.u!==user.id){
+  if(hasRated(cur.u,cid))return;
+  var c=await db.from("messages").select("id",{count:"exact",head:true}).eq("listing_id",cid).eq("buyer_id",user.id);
+  if(c.error||!c.count||!cur||cur.id!==cid||$("ratebtn"))return;
+  var b=document.createElement("button");b.id="ratebtn";b.className="btn alt";b.style.marginBottom="8px";b.textContent="Rate "+nameOf(cur.u);
+  b.onclick=function(){rateBox(cur.u,cur.id,function(x){$("msgs").before(x)})};
+  $("msgs").before(b);
+ }
+}
+function drawReviews(uid){
+ var rv=$("sellrev");if(!rv){rv=document.createElement("div");rv.id="sellrev";$("sellp").after(rv)}
+ var a=ratings.filter(function(r){return r.ratee_id===uid&&blocked.indexOf(r.rater_id)<0});
+ var st=rStat(uid);
+ if(!a.length){rv.innerHTML='<p class="note">No ratings yet.</p>';return}
+ rv.innerHTML='<h3>'+esc(rTxt(uid).trim())+'</h3>'+a.slice(0,30).map(function(r){return '<div class="m" style="margin:0 0 8px"><b style="color:var(--gold)">'+stars(r.stars)+'</b> '+esc(r.comment||"")+'<br><small>'+esc(nameOf(r.rater_id))+' \u00B7 '+new Date(r.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})+(user&&r.rater_id!==user.id?' \u00B7 <a href="#" data-rr="'+esc(r.id)+'" style="color:inherit">Report</a>':'')+'</small></div>'}).join("");
+ rv.onclick=async function(e){var t=e.target.closest("[data-rr]");if(!t)return;e.preventDefault();var why=prompt("What is wrong with this review?");if(!why||!why.trim())return;var r=await db.from("review_reports").insert({rating_id:t.dataset.rr,reason:why.trim().slice(0,500)});alert(r.error?(r.error.code==="23505"?"You already reported this review.":"Could not send: "+r.error.message):"Thank you. The OBM team will review it.")}
+}
 var profilesOK=false,names={},OWNER="onebrotherhoodmovement@gmail.com",RESERVED=/(^|[^a-z0-9])obm([^a-z0-9]|$)|one\s*brotherhood|admin|official|moderator|odessa\s*meats/i;
 function nameOf(u){return names[u]||("Brother "+String(u||"").slice(0,4))}
 var blocked=[],blkFor="",myArea="",onlyArea=false;try{myArea=localStorage.getItem("obm-area")||""}catch(e){}
@@ -141,6 +185,7 @@ function grid(){
 }
 async function load(){
  var pr=await db.from("profiles").select("user_id,display_name").limit(3000);profilesOK=!pr.error;if(!pr.error){names={};pr.data.forEach(function(x){names[x.user_id]=x.display_name});var dn0=$("dn");if(dn0&&user&&document.activeElement!==dn0&&!dn0.value)dn0.value=names[user.id]||""}
+ var rr=await db.from("ratings").select("id,rater_id,ratee_id,listing_id,stars,comment,created_at").order("created_at",{ascending:false}).limit(5000);ratingsOK=!rr.error;if(!rr.error)ratings=rr.data;
  var r=await db.from("listings").select("*").order("created_at",{ascending:false});
  if(r.error){$("grid").innerHTML="<p>Could not load listings. Please try again.</p>";return}
  items=r.data.map(function(x){return{id:x.id,u:x.user_id,sold:!!x.sold,at:x.created_at,t:x.title,p:x.price,c:normCat(x.category),l:x.area||"Nearby",d:x.description||"No description.",img:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls[0]:x.image_url),imgs:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls:(x.image_url?[x.image_url]:[]))}}).filter(function(i){return blocked.indexOf(i.u)<0});
@@ -212,9 +257,10 @@ async function loadMsgs(){
   rows.forEach(function(m){if(!seen[m.buyer_id]){seen[m.buyer_id]=++n;ids.push(m.buyer_id)}});
   if(!ids.length){note("No messages yet.");return}
   note("Buyers who messaged you:");
-  ids.forEach(function(id){var b=document.createElement("button");b.className="btn alt";b.textContent=names[id]||("Buyer "+seen[id]);b.onclick=function(){thread=id;loadMsgs()};$("msgs").appendChild(b)});
+  ids.forEach(function(id){var b=document.createElement("button");b.className="btn alt";b.textContent=(names[id]||("Buyer "+seen[id]))+rTxt(id);b.onclick=function(){thread=id;loadMsgs()};$("msgs").appendChild(b)});
   return;
  }
+ if(owner&&thread&&cur.sold&&ratingsOK&&!hasRated(thread,cur.id)){var rb2=document.createElement("button");rb2.className="btn alt";rb2.textContent="Rate "+nameOf(thread);rb2.onclick=function(){rateBox(thread,cur.id,function(x){$("msgs").before(x)})};$("msgs").appendChild(rb2)}
  if(owner){var bk=document.createElement("button");bk.className="btn alt";bk.textContent="All buyers";bk.onclick=function(){thread=null;loadMsgs()};$("msgs").appendChild(bk)}
  if(!rows.length)note("No messages yet. Say hello and ask where to meet.");
  rows.forEach(function(m){var d=document.createElement("div");d.className="m"+(m.sender_id===user.id?" me":"");d.textContent=m.body;$("msgs").appendChild(d)});
@@ -232,8 +278,9 @@ function fillSheet(){
   $("sd").after(br);br.after(bb);
  }
  var sb0=$("sby");if(sb0)sb0.remove();
- var sby=document.createElement("p");sby.id="sby";sby.className="note";sby.style.margin="0 0 8px";sby.textContent="Sold by "+nameOf(cur.u);$("sd").before(sby);
+ var sby=document.createElement("p");sby.id="sby";sby.className="note";sby.style.margin="0 0 8px";sby.textContent="Sold by "+nameOf(cur.u)+rTxt(cur.u);$("sd").before(sby);
  sheetExtras();
+ rateSetup();
 }
 async function delListing(){
  if(!confirm("Delete this listing?"))return;
@@ -458,10 +505,10 @@ function favLabel(){$("fav").textContent=favHas(cur.id)?"\u2665 Saved":"\u2661 S
 function showSeller(uid,fromRoute){
  hideSheet();
  var list=items.filter(function(i){return i.u===uid}),mine=user&&user.id===uid;
- $("sellh").textContent=mine?"My listings":nameOf(uid)+"\u2019s listings";
+ $("sellh").textContent=mine?"My listings":nameOf(uid)+"\u2019s listings"+rTxt(uid);
  var first=list.map(function(i){return i.at}).filter(Boolean).sort()[0],sold=list.filter(function(i){return i.sold}).length;
  $("sellp").textContent=list.length+" listing"+(list.length===1?"":"s")+(sold?" \u00B7 "+sold+" sold":"")+(first?" \u00B7 Selling since "+new Date(first).toLocaleDateString("en-US",{month:"short",year:"numeric"}):"");
- sellerUid=uid;
+ sellerUid=uid;drawReviews(uid);
  $("sellgrid").innerHTML=list.length?sortSold(list).map(card).join(""):"<p>No listings from this seller.</p>";
  show("seller",true);
  if(!fromRoute){history.pushState(null,"","#seller-"+uid);sellerPushed=true}
