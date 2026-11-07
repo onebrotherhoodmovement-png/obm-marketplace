@@ -147,6 +147,79 @@ async function uploadAll(m){
  }
  return out;
 }
+var MAXV=45*1024*1024,MAXVS=60;
+function compressVideo(f,prog){return new Promise(function(res){
+ if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){res(null);return}
+ var v=document.createElement("video");v.playsInline=true;v.preload="auto";
+ var u=URL.createObjectURL(f),ac=null,done=false,rec=null,tm=null;v.src=u;
+ function fin(b){if(done)return;done=true;clearTimeout(tm);try{v.pause()}catch(e){}URL.revokeObjectURL(u);try{if(ac)ac.close()}catch(e){}res(b)}
+ v.onerror=function(){fin(null)};
+ tm=setTimeout(function(){try{if(rec&&rec.state!=="inactive")rec.stop()}catch(e){}fin(null)},200000);
+ v.onloadedmetadata=function(){
+  var W=v.videoWidth,H=v.videoHeight;if(!W||!H||!isFinite(v.duration)){fin(null);return}
+  var k=Math.min(1,1280/Math.max(W,H)),cw=Math.round(W*k/2)*2,ch=Math.round(H*k/2)*2;
+  var c=document.createElement("canvas");c.width=cw;c.height=ch;var x=c.getContext("2d");
+  var stream=c.captureStream(30);
+  try{ac=new (window.AudioContext||window.webkitAudioContext)();ac.resume();var src=ac.createMediaElementSource(v),dst=ac.createMediaStreamDestination();src.connect(dst);dst.stream.getAudioTracks().forEach(function(t){stream.addTrack(t)})}catch(e){}
+  var mt=["video/mp4;codecs=avc1","video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"].filter(function(t){return MediaRecorder.isTypeSupported(t)})[0];
+  if(!mt){fin(null);return}
+  var chunks=[];
+  try{rec=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:2500000,audioBitsPerSecond:96000})}catch(e){fin(null);return}
+  rec.ondataavailable=function(e){if(e.data&&e.data.size)chunks.push(e.data)};
+  rec.onstop=function(){fin(chunks.length?new Blob(chunks,{type:mt.split(";")[0]}):null)};
+  function draw(){if(done)return;x.drawImage(v,0,0,cw,ch);if(prog)prog(v.currentTime/v.duration);if(!v.ended)requestAnimationFrame(draw)}
+  v.onended=function(){if(rec.state!=="inactive")rec.stop()};
+  rec.start(1000);
+  v.play().then(draw).catch(function(){try{rec.stop()}catch(e){}fin(null)});
+ };
+})}
+function vidMeta(f){return new Promise(function(res){var v=document.createElement("video"),u=URL.createObjectURL(f);v.preload="metadata";v.onloadedmetadata=function(){var d=v.duration;URL.revokeObjectURL(u);res(isFinite(d)?d:-1)};v.onerror=function(){URL.revokeObjectURL(u);res(-1)};v.src=u})}
+function videoMgr(box,url){
+ var m={url:url||"",blob:null,preview:"",removed:false,gone:[]};
+ var lab=document.createElement("p");lab.className="note";lab.textContent="Video (optional, 1 clip, up to "+MAXVS+" seconds)";
+ var inp=document.createElement("input");inp.type="file";inp.accept="video/*";inp.style.display="none";
+ var pv=document.createElement("div");pv.style.margin="0 0 8px";
+ var add=document.createElement("button");add.type="button";add.className="btn alt";add.style.marginBottom="8px";
+ var msg=document.createElement("small");msg.style.cssText="display:block;margin:0 0 10px";msg.setAttribute("role","status");
+ box.appendChild(lab);box.appendChild(pv);box.appendChild(add);box.appendChild(msg);box.appendChild(inp);
+ function draw(){
+  pv.innerHTML="";var src=m.preview||m.url;
+  if(src){var w=document.createElement("div");w.style.cssText="position:relative;max-width:260px";
+   var vd=document.createElement("video");vd.src=src;vd.controls=true;vd.playsInline=true;vd.preload="metadata";vd.style.cssText="width:100%;border-radius:10px;background:#000";
+   var x=document.createElement("button");x.type="button";x.textContent="×";x.setAttribute("aria-label","Remove video");
+   x.style.cssText="position:absolute;top:-10px;right:-10px;width:36px;height:36px;border-radius:50%;border:2px solid #fff;background:#000;color:#fff;font-size:22px;line-height:1;cursor:pointer;padding:0";
+   x.onclick=function(){if(m.preview){URL.revokeObjectURL(m.preview);m.preview=""}m.blob=null;if(m.url){m.gone.push(m.url);m.url=""}m.removed=true;msg.textContent="";draw()};
+   w.appendChild(vd);w.appendChild(x);pv.appendChild(w)}
+  add.textContent=src?"Replace video":"Add video";
+ }
+ add.onclick=function(){inp.click()};
+ inp.onchange=async function(){
+  var f=inp.files[0];inp.value="";if(!f)return;
+  if(f.type&&f.type.indexOf("video/")!==0){msg.textContent="Please choose a video file.";return}
+  add.disabled=true;msg.textContent="Checking video...";
+  var d=await vidMeta(f);
+  if(d>MAXVS+1){msg.textContent="That video is "+Math.round(d)+" seconds. Please choose one that is "+MAXVS+" seconds or shorter.";add.disabled=false;return}
+  var b=f;
+  if(f.size>MAXV){
+   msg.textContent="Preparing video... keep this screen open (about as long as the video).";
+   b=await compressVideo(f,function(p){msg.textContent="Preparing video... "+Math.min(99,Math.round(p*100))+"%. Keep this screen open."});
+   if(!b||b.size>MAXV){msg.textContent="That video is too large. Record at 720p, or choose a shorter clip, and try again.";add.disabled=false;return}
+  }
+  if(m.preview)URL.revokeObjectURL(m.preview);
+  if(m.url){m.gone.push(m.url);m.url=""}
+  m.blob=b;m.removed=false;m.preview=URL.createObjectURL(b);msg.textContent="Video ready ("+(b.size/1048576).toFixed(1)+" MB).";add.disabled=false;draw();
+ };
+ m.reset=function(){if(m.preview)URL.revokeObjectURL(m.preview);m.preview="";m.blob=null;m.url="";m.removed=false;m.gone=[];msg.textContent="";draw()};
+ draw();return m;
+}
+async function uploadVideo(m){
+ if(!m.blob)return m.removed?null:(m.url||null);
+ var t=m.blob.type||"video/mp4",ext=/webm/.test(t)?"webm":/quicktime/.test(t)?"mov":"mp4";
+ var path=user.id+"/"+Date.now()+"-v-"+Math.random().toString(36).slice(2,7)+"."+ext;
+ var up=await db.storage.from("listing-photos").upload(path,m.blob,{contentType:t});
+ if(up.error)throw up.error;
+ return db.storage.from("listing-photos").getPublicUrl(path).data.publicUrl;
+}
 async function rmPhotos(u){
  var p=(u||[]).filter(function(x){return x&&x.indexOf("/listing-photos/")>-1}).map(function(x){return x.split("/listing-photos/")[1]});
  if(p.length){try{await db.storage.from("listing-photos").remove(p)}catch(e){}}
@@ -154,6 +227,7 @@ async function rmPhotos(u){
 async function saveRow(fn,row){
  var r=await fn(row);
  if(r.error&&/image_urls/.test(r.error.message||"")){var o=Object.assign({},row);delete o.image_urls;r=await fn(o)}
+ if(r.error&&/video_url/.test(r.error.message||"")){var o2=Object.assign({},row);delete o2.video_url;r=await fn(o2);if(!r.error)alert("Saved, but the video was not attached. The video feature needs a one-time database step first.")}
  return r;
 }
 function gal(i){
@@ -188,7 +262,7 @@ async function load(){
  var rr=await db.from("ratings").select("id,rater_id,ratee_id,listing_id,stars,comment,created_at").order("created_at",{ascending:false}).limit(5000);ratingsOK=!rr.error;if(!rr.error)ratings=rr.data;
  var r=await db.from("listings").select("*").order("created_at",{ascending:false});
  if(r.error){$("grid").innerHTML="<p>Could not load listings. Please try again.</p>";return}
- items=r.data.map(function(x){return{id:x.id,u:x.user_id,sold:!!x.sold,at:x.created_at,t:x.title,p:x.price,c:normCat(x.category),l:x.area||"Nearby",d:x.description||"No description.",img:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls[0]:x.image_url),imgs:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls:(x.image_url?[x.image_url]:[]))}}).filter(function(i){return blocked.indexOf(i.u)<0});
+ items=r.data.map(function(x){return{id:x.id,u:x.user_id,sold:!!x.sold,at:x.created_at,t:x.title,p:x.price,c:normCat(x.category),v:x.video_url||"",l:x.area||"Nearby",d:x.description||"No description.",img:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls[0]:x.image_url),imgs:(Array.isArray(x.image_urls)&&x.image_urls.length?x.image_urls:(x.image_url?[x.image_url]:[]))}}).filter(function(i){return blocked.indexOf(i.u)<0});
  grid();
 }
 async function loadBlocks(){
@@ -217,7 +291,7 @@ function authUI(){
  var uid=user?user.id:"";if(uid!==blkFor){blkFor=uid;if(uid)loadBlocks();else{blocked=[];drawBlocked();load()}}
  var box=$("authbox");
  if(!box){box=document.createElement("div");box.id="authbox";$("account").insertBefore(box,$("account").firstChild)}
- ["pt","pp","pc","pl","pd","pf","pb"].forEach(function(i){$(i).style.display=user?"":"none"});
+ ["pt","pp","pc","pl","pd","pf","pb"].forEach(function(i){$(i).style.display=user?"":"none"});var vf0=$("vf");if(vf0)vf0.style.display=user?"":"none";
  if(recovering&&user){
   box.innerHTML='<h2>Set a new password</h2><p class="note">Choose a new password for '+esc(user.email)+'.</p><input id="np" type="password" placeholder="New password (6 or more characters)" autocomplete="new-password"><button class="btn" id="npb" type="button">Save new password</button><p id="npm"></p>';
   $("npb").onclick=async function(){var p=$("np").value;if(p.length<6){$("npm").textContent="Use at least 6 characters.";return}$("npb").disabled=true;var r=await db.auth.updateUser({password:p});if(r.error){$("npb").disabled=false;$("npm").textContent=r.error.message;return}recovering=false;alert("Your password was updated.");authUI()};
@@ -277,6 +351,8 @@ function fillSheet(){
   var bb=document.createElement("button");bb.id="blk";bb.className="btn alt";bb.style.marginBottom="8px";bb.textContent="Block this seller";bb.onclick=blockSeller;
   $("sd").after(br);br.after(bb);
  }
+ var vb0=$("vidbox");if(vb0)vb0.remove();
+ if(cur.v){var vb=document.createElement("div");vb.id="vidbox";vb.style.margin="0 0 10px";var vd=document.createElement("video");vd.controls=true;vd.playsInline=true;vd.preload="metadata";vd.style.cssText="width:100%;max-height:420px;border-radius:12px;background:#000";if(cur.img)vd.poster=cur.img;vd.src=cur.v;vb.appendChild(vd);$("sd").after(vb)}
  var sb0=$("sby");if(sb0)sb0.remove();
  var sby=document.createElement("p");sby.id="sby";sby.className="note";sby.style.margin="0 0 8px";sby.textContent="Sold by "+nameOf(cur.u)+rTxt(cur.u);$("sd").before(sby);
  sheetExtras();
@@ -286,28 +362,29 @@ async function delListing(){
  if(!confirm("Delete this listing?"))return;
  var r=await db.from("listings").delete().eq("id",cur.id);
  if(r.error){alert(r.error.message);return}
- await rmPhotos(cur.imgs);
+ await rmPhotos((cur.imgs||[]).concat(cur.v?[cur.v]:[]));
  if(openedByPush){history.back()}else{hideSheet();history.replaceState(null,"","#browse")}
  load();
 }
 function openEdit(){
  if($("editbox")){$("editbox").remove();return}
  var box=document.createElement("div");box.id="editbox";box.style.margin="0 0 12px";
- box.innerHTML='<input id="et" placeholder="Item name"><input id="ep" type="number" inputmode="numeric" placeholder="Price in dollars"><select id="ec"></select><input id="el" placeholder="Your area"><textarea id="ed" rows="3" placeholder="Description"></textarea><p class="note">Photos</p><div id="epf"></div><div class="row"><button class="btn" id="es">Save changes</button><button class="btn alt" id="ex">Cancel</button></div>';
+ box.innerHTML='<input id="et" placeholder="Item name"><input id="ep" type="number" inputmode="numeric" placeholder="Price in dollars"><select id="ec"></select><input id="el" placeholder="Your area"><textarea id="ed" rows="3" placeholder="Description"></textarea><p class="note">Photos</p><div id="epf"></div><div id="evf"></div><div class="row"><button class="btn" id="es">Save changes</button><button class="btn alt" id="ex">Cancel</button></div>';
  $("del").after(box);
  $("ec").innerHTML=catOptions();
  $("et").value=cur.t;$("ep").value=cur.p;$("ec").value=cur.c;if(!$("ec").value)$("ec").value="General"+SEP+"Other - General";$("el").value=cur.l==="Nearby"?"":cur.l;$("ed").value=cur.d==="No description."?"":cur.d;
- var em=photoMgr($("epf"),cur.imgs||[]);
+ var em=photoMgr($("epf"),cur.imgs||[]);var evm=videoMgr($("evf"),cur.v||"");
  $("ex").onclick=function(){box.remove()};
  $("es").onclick=async function(){
   var t=$("et").value.trim(),p=$("ep").value;
   if(!t||!p){alert("Add an item name and a price.");return}
   var sb=$("es");sb.disabled=true;sb.textContent="Saving...";
-  var urls;try{urls=await uploadAll(em)}catch(err){alert("Photo upload failed: "+err.message);sb.disabled=false;sb.textContent="Save changes";return}
+  var urls,vurl;try{urls=await uploadAll(em);vurl=await uploadVideo(evm)}catch(err){alert("Upload failed: "+err.message);sb.disabled=false;sb.textContent="Save changes";return}
   var row={title:t,price:Number(p),category:$("ec").value,area:$("el").value.trim()||null,description:$("ed").value.trim()||null,image_url:urls[0]||null,image_urls:urls};
+  if(evm.blob||evm.removed)row.video_url=vurl||null;
   var r=await saveRow(function(o){return db.from("listings").update(o).eq("id",cur.id)},row);
   if(r.error){alert("Could not save: "+r.error.message);sb.disabled=false;sb.textContent="Save changes";return}
-  await rmPhotos(em.gone);
+  await rmPhotos(em.gone.concat(evm.gone));
   var id=cur.id;await load();
   cur=items.filter(function(x){return x.id===id})[0]||cur;
   fillSheet();
@@ -350,19 +427,20 @@ $("ms").onclick=async function(){var v=$("mi").value.trim();
 };
 setInterval(function(){if($("sheet").classList.contains("on")&&cur)loadMsgs()},8000);
 $("pc").innerHTML='<option value="">Choose a category</option>'+catOptions();
-var pfBox=document.createElement("div");pfBox.id="pf";$("pb").before(pfBox);var pm=photoMgr(pfBox,[]);
+var pfBox=document.createElement("div");pfBox.id="pf";$("pb").before(pfBox);var pm=photoMgr(pfBox,[]);var vBox=document.createElement("div");vBox.id="vf";$("pb").before(vBox);var vm=videoMgr(vBox,"");vBox.style.display=user?"":"none";
 $("pb").onclick=async function(){var t=$("pt").value.trim(),p=$("pp").value;
  if(profilesOK&&!names[user.id]){alert("Please choose a display name first. Go to Account, type your name, and tap Save name.");show("account");return}
  if(!user){alert("Sign in first.");return}
  if(!t||!p){alert("Add an item name and a price.");return}
  if(!$("pc").value){alert("Choose a category.");return}
  var b=$("pb");b.disabled=true;b.textContent="Posting...";
- var urls;try{urls=await uploadAll(pm)}catch(err){alert("Photo upload failed: "+err.message);b.disabled=false;b.textContent="Post listing";return}
+ var urls,vurl;try{urls=await uploadAll(pm);vurl=await uploadVideo(vm)}catch(err){alert("Upload failed: "+err.message);b.disabled=false;b.textContent="Post listing";return}
  var row={title:t,price:Number(p),category:$("pc").value,area:$("pl").value.trim()||null,description:$("pd").value.trim()||null,image_url:urls[0]||null,image_urls:urls};
+ if(vurl)row.video_url=vurl;
  var r=await saveRow(function(o){return db.from("listings").insert(o)},row);
  b.disabled=false;b.textContent="Post listing";
- if(r.error){await rmPhotos(urls);alert("Could not post: "+r.error.message);return}
- ["pt","pp","pl","pd"].forEach(function(i){$(i).value=""});$("pc").value="";pm.reset();cat="All";sub="";chips();await load();show("browse")};
+ if(r.error){await rmPhotos(urls.concat(vurl?[vurl]:[]));alert("Could not post: "+r.error.message);return}
+ ["pt","pp","pl","pd"].forEach(function(i){$(i).value=""});$("pc").value="";pm.reset();vm.reset();cat="All";sub="";chips();await load();show("browse")};
 function show(t,np){document.querySelectorAll(".tab").forEach(function(e){e.classList.toggle("on",e.id===t)});
  document.querySelectorAll("nav button").forEach(function(b){b.classList.toggle("on",b.dataset.t===(NAVMAP[t]||t))});window.scrollTo(0,0);
  if(t==="saved")renderSaved();
@@ -464,7 +542,7 @@ $("sp").onclick=function(e){
  openLB(cur.imgs,k);
 };
 function validTab(t){var e=document.getElementById(t);return !!(e&&e.classList.contains("tab"))}
-function hideSheet(){$("sheet").classList.remove("on");cur=null;thread=null;updateFab()}
+function hideSheet(){var vb=$("vidbox");if(vb)vb.remove();$("sheet").classList.remove("on");cur=null;thread=null;updateFab()}
 function openListing(it,tb){cur=it;thread=tb||null;fillSheet();$("sheet").classList.add("on");updateFab();window.scrollTo(0,0);loadMsgs()}
 function route(pop){
  if(recovering){show("account",true);return}
@@ -489,7 +567,7 @@ function favToggle(id){var a=favGet(),k=a.indexOf(String(id));if(k>-1)a.splice(k
 function sortSold(l){return l.slice().sort(function(a,b){return (a.sold?1:0)-(b.sold?1:0)})}
 function card(i){
  var k=items.indexOf(i),f=favHas(i.id);
- return '<button class="item'+(i.sold?' sold':'')+'" data-k="'+k+'"><div class="ph">'+thumb(i)+(i.sold?'<span class="soldb">SOLD</span>':'')+'<span class="heart'+(f?' on':'')+'" role="button" aria-label="'+(f?'Remove from saved':'Save listing')+'" data-id="'+esc(i.id)+'">'+(f?'\u2665':'\u2661')+'</span></div><div class="b"><b>'+money(i.p)+'</b>'+esc(i.t)+'<br><small>'+esc(i.l)+(isNear(i)?' \u00B7 <b style="color:var(--gold)">Near you</b>':'')+'</small></div></button>';
+ return '<button class="item'+(i.sold?' sold':'')+'" data-k="'+k+'"><div class="ph">'+thumb(i)+(i.sold?'<span class="soldb">SOLD</span>':'')+(i.v?'<span style="position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.75);color:#fff;font-size:12px;padding:2px 8px;border-radius:99px">\u25B6 Video</span>':'')+'<span class="heart'+(f?' on':'')+'" role="button" aria-label="'+(f?'Remove from saved':'Save listing')+'" data-id="'+esc(i.id)+'">'+(f?'\u2665':'\u2661')+'</span></div><div class="b"><b>'+money(i.p)+'</b>'+esc(i.t)+'<br><small>'+esc(i.l)+(isNear(i)?' \u00B7 <b style="color:var(--gold)">Near you</b>':'')+'</small></div></button>';
 }
 function renderSaved(){
  var ids=favGet(),list=items.filter(function(i){return ids.indexOf(String(i.id))>-1});
